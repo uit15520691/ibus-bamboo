@@ -21,6 +21,7 @@ const INTERFACE_XML = `
 export default class BambooFocusExtension {
     constructor() {
         this._ownerId = 0;
+        this._connection = null;
         this._registrationId = 0;
     }
 
@@ -30,6 +31,7 @@ export default class BambooFocusExtension {
             BUS_NAME,
             Gio.BusNameOwnerFlags.NONE,
             connection => {
+                this._connection = connection;
                 const nodeInfo = Gio.DBusNodeInfo.new_for_xml(INTERFACE_XML);
                 const interfaceInfo = nodeInfo.lookup_interface(INTERFACE_NAME);
 
@@ -60,10 +62,15 @@ export default class BambooFocusExtension {
     }
 
     disable() {
+        if (this._connection && this._registrationId) {
+            this._connection.unregister_object(this._registrationId);
+        }
+        this._registrationId = 0;
+        this._connection = null;
+
         if (this._ownerId) {
             Gio.bus_unown_name(this._ownerId);
             this._ownerId = 0;
         }
-        this._registrationId = 0;
     }
 }
