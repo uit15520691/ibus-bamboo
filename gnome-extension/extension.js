@@ -1,6 +1,7 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 const BUS_NAME = 'org.ibus.bamboo.GnomeFocus';
 const OBJECT_PATH = '/org/ibus/bamboo/GnomeFocus';
@@ -18,8 +19,9 @@ const INTERFACE_XML = `
   </interface>
 </node>`;
 
-export default class BambooFocusExtension {
-    constructor() {
+export default class BambooFocusExtension extends Extension {
+    constructor(metadata) {
+        super(metadata);
         this._ownerId = 0;
         this._connection = null;
         this._registrationId = 0;
