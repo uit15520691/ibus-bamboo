@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"ibus-bamboo/config"
+	"github.com/BambooEngine/bamboo-core"
+)
 
 func TestIsSensitiveInputContext(t *testing.T) {
 	tests := []struct { name string; purpose, hints uint32; want bool }{
@@ -28,5 +33,60 @@ func TestNormalizeApplicationIdentity(t *testing.T) {
 		if got := normalizeApplicationIdentity(tt.input); got != tt.want {
 			t.Errorf("normalizeApplicationIdentity(%q) = %q, want %q", tt.input, got, tt.want)
 		}
+	}
+}
+
+func newFocusTestEngine() (*fakeEngine, *IBusBambooEngine) {
+	fe := NewFakeEngine()
+	cfg := config.DefaultCfg()
+	inputMethod := bamboo.ParseInputMethod(cfg.InputMethodDefinitions, cfg.InputMethod)
+	e := NewIbusBambooEngine("test", &cfg, fe, bamboo.NewEngine(inputMethod, cfg.Flags))
+	return fe, e
+}
+
+func TestFocusIdentityChangeDiscardsComposition(t *testing.T) {
+	fe, e := newFocusTestEngine()
+	e.wmClasses = "old-app"
+	if _, err := e.ProcessKeyEvent(uint32('t'), uint32('t'), 0); err != nil {
+		t.Fatal(err)
+	}
+	if fe.preeditText == "" {
+		t.Fatal("expected test key to create a preedit")
+	}
+
+	e.checkWmClass("new-app")
+	if fe.commitText != "" {
+		t.Fatalf("focus change committed old composition into new field: %q", fe.commitText)
+	}
+	if fe.preeditText != "" {
+		t.Fatalf("preedit remained after focus change: %q", fe.preeditText)
+	}
+}
+
+func TestSensitiveContextBypassesInputMethod(t *testing.T) {
+	fe, e := newFocusTestEngine()
+	if err := e.SetContentType(ibusInputPurposePassword, 0); err != nil {
+		t.Fatal(err)
+	}
+	handled, err := e.ProcessKeyEvent(uint32('t'), uint32('t'), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if handled {
+		t.Fatal("password-field key should pass through without Bamboo processing")
+	}
+	if fe.preeditText != "" || fe.commitText != "" {
+		t.Fatalf("Bamboo modified sensitive field: preedit=%q commit=%q", fe.preeditText, fe.commitText)
+	}
+
+	if err := e.SetContentType(0, 0); err != nil {
+		t.Fatal(err)
+	}
+	handled, err = e.ProcessKeyEvent(uint32('t'), uint32('t'), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !handled || fe.preeditText == "" {
+		t.Fatalf("Bamboo did not resume after leaving sensitive field: handled=%v preedit=%q", handled, fe.preeditText)
 	}
 }
