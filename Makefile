@@ -43,6 +43,27 @@ build:
 test:
 	$(SHELL) scripts/test
 
+.PHONY: docker-build-base
+
+docker-build-base:
+	docker build  --no-cache  -f Dockerfile.base -t ibus-bamboo-base:latest .
+
+.PHONY: docker-test
+
+docker-test:
+	docker build --no-cache -f Dockerfile.test -t ibus-bamboo-test:latest .
+	docker run ibus-bamboo-test:latest
+
+.PHONY: docker-build
+
+docker-build:
+	docker run --rm \
+		-v "$(CURDIR):/src" \
+		-w /src \
+		--entrypoint sh \
+		ibus-bamboo-test:latest \
+		-c 'git config --global --add safe.directory /src && make build'
+
 clean:
 	rm -f ibus-engine-bamboo
 	rm -f *_linux *_cover.html go_test_* go_build_* test *.gz test

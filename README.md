@@ -170,3 +170,34 @@ Nếu bạn muốn hiểu thêm về dự án có thể xem thêm ở file này.
 
 ## Giấy phép
 ibus-bamboo là phần mềm tự do nguồn mở, được phát hành dưới các quy định ghi trong Giấy phép Công cộng GNU (GNU General Public License v3.0).
+
+
+## Docker build installation
+```shell
+# Install the already-compiled engine
+sudo install -D -m 755 ibus-engine-bamboo \
+  /usr/lib/ibus-bamboo/ibus-engine-bamboo
+
+# Install icons and data
+sudo mkdir -p /usr/share/ibus-bamboo
+sudo cp -R -f icons data /usr/share/ibus-bamboo/
+
+# Install IBus component definition and desktop entry
+sudo install -D -m 644 data/bamboo.xml \
+  /usr/share/ibus/component/bamboo.xml
+
+sudo install -D -m 644 data/ibus-setup-Bamboo.desktop \
+  /usr/share/applications/ibus-setup-Bamboo.desktop
+```
+
+
+## Shell extension for ibus-bamboo
+```shell
+mkdir -p ~/.local/share/gnome-shell/extensions/bamboo-focus@ibus-bamboo
+
+cp -R gnome-extension/. \
+  ~/.local/share/gnome-shell/extensions/bamboo-focus@ibus-bamboo/
+
+gnome-extensions enable bamboo-focus@ibus-bamboo
+gnome-extensions info bamboo-focus@ibus-bamboo
+```

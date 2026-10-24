@@ -56,6 +56,9 @@ type IBusBambooEngine struct {
 	isFirstTimeSendingBS   bool
 	emoji                  *EmojiEngine
 	isSurroundingTextReady bool
+	contentPurpose        uint32
+	contentHints          uint32
+	bypassInputMethod      bool
 	lastKeyWithShift       bool
 	lastCommitText         int64
 	// restore key strokes by pressing Shift + Space
@@ -97,6 +100,9 @@ func (e *IBusBambooEngine) ProcessKeyEvent(keyVal uint32, keyCode uint32, state 
 		// fmt.Println("Ignore key-up event")
 		return false, nil
 	}
+	if e.bypassInputMethod {
+		return false, nil
+	}
 	fmt.Printf("\n")
 	log.Printf(">>>>ProcessKeyEvent >  %d | state %d keyVal 0x%04x | %c <<<<\n", len(keyPressChan), state, keyVal, rune(keyVal))
 	if ret, retValue := e.processShortcutKey(keyVal, keyCode, state); ret {
@@ -110,7 +116,10 @@ func (e *IBusBambooEngine) ProcessKeyEvent(keyVal uint32, keyCode uint32, state 
 
 func (e *IBusBambooEngine) FocusIn() *dbus.Error {
 	log.Print("FocusIn.")
-	var latestWm = e.getLatestWmClass()
+	latestWm := e.getLatestWmClass()
+	if latestWm == "" {
+		log.Print("FocusIn: focused application identity unavailable; per-application rules are temporarily disabled")
+	}
 	e.checkWmClass(latestWm)
 	e.RegisterProperties(e.propList)
 	e.RequireSurroundingText()
@@ -129,7 +138,9 @@ func (e *IBusBambooEngine) FocusIn() *dbus.Error {
 }
 
 func (e *IBusBambooEngine) FocusOut() *dbus.Error {
-	log.Print("FocusOut.")
+	log.Print("FocusOut: discard unfinished preedit to prevent text leaking into another field")
+	e.resetPreedit()
+	e.resetFakeBackspace()
 	return nil
 }
 
@@ -248,6 +259,20 @@ func (e *IBusBambooEngine) SetCursorLocation(x int32, y int32, w int32, h int32)
 }
 
 func (e *IBusBambooEngine) SetContentType(purpose uint32, hints uint32) *dbus.Error {
+	nextSensitive := shouldBypassInputMethod(purpose, hints)
+	if nextSensitive != e.bypassInputMethod {
+		if nextSensitive {
+			log.Printf("SetContentType: entering a context that bypasses Bamboo (purpose=%d hints=0x%x); disabling Bamboo processing", purpose, hints)
+			e.resetPreedit()
+			e.resetFakeBackspace()
+			e.HideLookupTable()
+		} else {
+			log.Printf("SetContentType: leaving a context that bypasses Bamboo (purpose=%d hints=0x%x)", purpose, hints)
+		}
+	}
+	e.contentPurpose = purpose
+	e.contentHints = hints
+	e.bypassInputMethod = nextSensitive
 	return nil
 }
 
