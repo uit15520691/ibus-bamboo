@@ -58,7 +58,7 @@ type IBusBambooEngine struct {
 	isSurroundingTextReady bool
 	contentPurpose        uint32
 	contentHints          uint32
-	sensitiveContent      bool
+	bypassInputMethod      bool
 	lastKeyWithShift       bool
 	lastCommitText         int64
 	// restore key strokes by pressing Shift + Space
@@ -100,7 +100,7 @@ func (e *IBusBambooEngine) ProcessKeyEvent(keyVal uint32, keyCode uint32, state 
 		// fmt.Println("Ignore key-up event")
 		return false, nil
 	}
-	if e.sensitiveContent {
+	if e.bypassInputMethod {
 		return false, nil
 	}
 	fmt.Printf("\n")
@@ -259,10 +259,10 @@ func (e *IBusBambooEngine) SetCursorLocation(x int32, y int32, w int32, h int32)
 }
 
 func (e *IBusBambooEngine) SetContentType(purpose uint32, hints uint32) *dbus.Error {
-	nextSensitive := isSensitiveInputContext(purpose, hints)
-	if nextSensitive != e.sensitiveContent {
+	nextSensitive := shouldBypassInputMethod(purpose, hints)
+	if nextSensitive != e.bypassInputMethod {
 		if nextSensitive {
-			log.Printf("SetContentType: entering sensitive input context (purpose=%d hints=0x%x); disabling Bamboo processing", purpose, hints)
+			log.Printf("SetContentType: entering a context that bypasses Bamboo (purpose=%d hints=0x%x); disabling Bamboo processing", purpose, hints)
 			e.resetPreedit()
 			e.resetFakeBackspace()
 			e.HideLookupTable()
@@ -272,7 +272,7 @@ func (e *IBusBambooEngine) SetContentType(purpose uint32, hints uint32) *dbus.Er
 	}
 	e.contentPurpose = purpose
 	e.contentHints = hints
-	e.sensitiveContent = nextSensitive
+	e.bypassInputMethod = nextSensitive
 	return nil
 }
 

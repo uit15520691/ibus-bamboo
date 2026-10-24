@@ -10,6 +10,11 @@ import (
 func TestIsSensitiveInputContext(t *testing.T) {
 	tests := []struct { name string; purpose, hints uint32; want bool }{
 		{name: "normal", want: false},
+		{name: "digits", purpose: ibusInputPurposeDigits, want: true},
+		{name: "number", purpose: ibusInputPurposeNumber, want: true},
+		{name: "phone", purpose: ibusInputPurposePhone, want: true},
+		{name: "url", purpose: ibusInputPurposeURL, want: true},
+		{name: "email", purpose: ibusInputPurposeEmail, want: true},
 		{name: "password", purpose: ibusInputPurposePassword, want: true},
 		{name: "pin", purpose: ibusInputPurposePIN, want: true},
 		{name: "private hint", hints: ibusInputHintPrivate, want: true},
@@ -17,8 +22,8 @@ func TestIsSensitiveInputContext(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := isSensitiveInputContext(tt.purpose, tt.hints); got != tt.want {
-				t.Fatalf("isSensitiveInputContext(%d, %#x) = %v, want %v", tt.purpose, tt.hints, got, tt.want)
+			if got := shouldBypassInputMethod(tt.purpose, tt.hints); got != tt.want {
+				t.Fatalf("shouldBypassInputMethod(%d, %#x) = %v, want %v", tt.purpose, tt.hints, got, tt.want)
 			}
 		})
 	}
