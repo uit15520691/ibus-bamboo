@@ -7,7 +7,7 @@ import (
 	"github.com/BambooEngine/bamboo-core"
 )
 
-func TestIsSensitiveInputContext(t *testing.T) {
+func TestShouldBypassInputMethod(t *testing.T) {
 	tests := []struct { name string; purpose, hints uint32; want bool }{
 		{name: "normal", want: false},
 		{name: "digits", purpose: ibusInputPurposeDigits, want: true},
@@ -68,7 +68,7 @@ func TestFocusIdentityChangeDiscardsComposition(t *testing.T) {
 	}
 }
 
-func TestSensitiveContextBypassesInputMethod(t *testing.T) {
+func TestStructuredFieldBypassesInputMethod(t *testing.T) {
 	fe, e := newFocusTestEngine()
 	if err := e.SetContentType(ibusInputPurposePassword, 0); err != nil {
 		t.Fatal(err)

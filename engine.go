@@ -267,7 +267,7 @@ func (e *IBusBambooEngine) SetContentType(purpose uint32, hints uint32) *dbus.Er
 			e.resetFakeBackspace()
 			e.HideLookupTable()
 		} else {
-			log.Printf("SetContentType: leaving sensitive input context (purpose=%d hints=0x%x)", purpose, hints)
+			log.Printf("SetContentType: leaving a context that bypasses Bamboo (purpose=%d hints=0x%x)", purpose, hints)
 		}
 	}
 	e.contentPurpose = purpose
