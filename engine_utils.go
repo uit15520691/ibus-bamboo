@@ -24,6 +24,7 @@ import (
 	"ibus-bamboo/config"
 	"ibus-bamboo/ui"
 	"io/ioutil"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -143,11 +144,17 @@ func (e *IBusBambooEngine) resetBuffer() {
 }
 
 func (e *IBusBambooEngine) checkWmClass(newId string) {
-	if e.wmClasses != newId {
-		e.wmClasses = newId
-		e.resetBuffer()
-		e.resetFakeBackspace()
+	if e.wmClasses == newId {
+		return
 	}
+	oldID := e.wmClasses
+	// FocusIn happens after the new field is focused: never commit old text into it.
+	if e.getRawKeyLen() > 0 || oldID != "" {
+		log.Printf("Focus identity changed (%q -> %q); discarding pending composition", oldID, newId)
+		e.resetPreedit()
+	}
+	e.resetFakeBackspace()
+	e.wmClasses = newId
 }
 
 func (e *IBusBambooEngine) isShortcutKeyPressed(keyVal, state uint32, shortcut uint) bool {
@@ -549,15 +556,20 @@ func (e *IBusBambooEngine) getWmClass() string {
 func (e *IBusBambooEngine) getLatestWmClass() string {
 	var wmClass string
 	if isGnome {
-		wmClass, _ = gnomeGetFocusWindowClass()
+		var err error
+		wmClass, err = gnomeGetFocusWindowClass()
+		if err != nil {
+			log.Printf("GNOME focus lookup failed: %v", err)
+		}
 	} else if isWayland {
 		wmClass = wlAppId
-	}
-	if wmClass == "" {
+		if wmClass == "" {
+			log.Print("Wayland focus lookup returned no application ID; refusing X11 fallback to avoid stale identity")
+		}
+	} else {
 		wmClass = x11GetFocusWindowClass()
 	}
-	wmClass = strings.Replace(wmClass, "\"", "", -1)
-	return wmClass
+	return normalizeApplicationIdentity(wmClass)
 }
 
 func (e *IBusBambooEngine) checkInputMode(im int) bool {

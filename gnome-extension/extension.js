@@ -43,8 +43,10 @@ export default class BambooFocusExtension extends Extension {
                     (conn, sender, objectPath, interfaceName, methodName, parameters, invocation) => {
                         if (methodName === 'GetFocusedWindowClass') {
                             const window = global.display.focus_window;
-                            const wmClass = window?.get_wm_class() ?? '';
-                            invocation.return_value(new GLib.Variant('(s)', [wmClass]));
+                            const wmClass = window?.get_wm_class() || '';
+                            // Prefer the legacy WM_CLASS for existing Bamboo mappings.
+                            const identity = wmClass || window?.get_gtk_application_id?.() || '';
+                            invocation.return_value(new GLib.Variant('(s)', [identity]));
                         } else if (methodName === 'IsOverviewVisible') {
                             invocation.return_value(new GLib.Variant('(b)', [Main.overview.visible]));
                         } else {

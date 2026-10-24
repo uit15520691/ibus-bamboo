@@ -1,7 +1,7 @@
 {
   "uuid": "bamboo-focus@ibus-bamboo",
   "name": "Bamboo Focus Detection",
-  "description": "Provides the focused window WM class to IBus Bamboo without enabling GNOME Shell Eval.",
+  "description": "Provides focused window identity (WM_CLASS or GTK application ID) without enabling GNOME Shell Eval.",
   "shell-version": ["51"],
   "version": 1
 }
