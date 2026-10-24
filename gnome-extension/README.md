@@ -46,3 +46,18 @@ If identity lookup fails, Bamboo logs the failure and does not fall back to X11 
 
 This extension targets GNOME Shell 51. It should be tested in a real GNOME
 Wayland session before treating the combination as fully supported.
+
+## Diagnostics
+
+Check that the extension is installed/enabled and owns its D-Bus name:
+
+```sh
+gnome-extensions info bamboo-focus@ibus-bamboo
+busctl --user status org.ibus.bamboo.GnomeFocus
+busctl --user call org.ibus.bamboo.GnomeFocus \
+  /org/ibus/bamboo/GnomeFocus org.ibus.bamboo.GnomeFocus GetFocusedWindowClass
+```
+
+If the D-Bus name is missing, re-enable the extension and log out/in if GNOME
+Shell has not discovered it. Bamboo logs GNOME lookup failures and deliberately
+does not substitute an X11 window class on Wayland.
