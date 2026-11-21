@@ -1,25 +1,41 @@
-PREFIX="$1"
+PREFIX="${1:-/usr}"
 DESTDIR="$2"
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 engine_name="bamboo"
 engine_gui_name="ibus-setup-Bamboo.desktop"
 ibus_e_name="ibus-engine-${engine_name}"
 pkg_name="ibus-${engine_name}"
-version="0.8.5"
+version=$(sh "$script_dir/version")
 
 engine_dir=${PREFIX}/share/${pkg_name}
 ibus_dir=${PREFIX}/share/ibus
+gnome_ext_dir=${PREFIX}/share/gnome-shell/extensions/bamboo-focus@ibus-bamboo
+
+# Render the component definition with the build version and the actual
+# install prefix instead of the hardcoded /usr paths checked in upstream.
+render_component() {
+	sed -e "s|<version>[^<]*</version>|<version>${version}</version>|" \
+		-e "s|/usr/local/lib/ibus-bamboo|${PREFIX}/lib/ibus-bamboo|g" \
+		-e "s|/usr/local/share/ibus-bamboo|${PREFIX}/share/ibus-bamboo|g" \
+		-e "s|/usr/lib/ibus-bamboo|${PREFIX}/lib/ibus-bamboo|g" \
+		-e "s|/usr/share/ibus-bamboo|${PREFIX}/share/ibus-bamboo|g" \
+		"$1" > "$2"
+}
 
 # Main script
 case $(uname) in
 	"Linux") mkdir -p ${DESTDIR}${engine_dir} \
 		${DESTDIR}${PREFIX}/lib/ibus-${engine_name} \
 		${DESTDIR}${ibus_dir}/component/ \
-		${DESTDIR}${PREFIX}/share/applications/
+		${DESTDIR}${PREFIX}/share/applications/ \
+		${DESTDIR}${gnome_ext_dir}
 		cp -R -f icons data ${DESTDIR}${engine_dir}
 		cp -f ${ibus_e_name} ${DESTDIR}${PREFIX}/lib/ibus-${engine_name}/
-		cp -f data/${engine_name}.xml ${DESTDIR}${ibus_dir}/component/
+		render_component data/${engine_name}.xml ${DESTDIR}${ibus_dir}/component/${engine_name}.xml
 		cp -f data/${engine_gui_name} ${DESTDIR}${PREFIX}/share/applications/
+		cp -f gnome-extension/extension.js gnome-extension/metadata.json ${DESTDIR}${gnome_ext_dir}/
 		;;
 	"FreeBSD") mkdir -p ${DESTDIR}${engine_dir} \
 		${DESTDIR}${PREFIX}/lib/ibus-${engine_name} \
@@ -28,7 +44,7 @@ case $(uname) in
 
 		cp -R -f icons data ${DESTDIR}${engine_dir}
 		cp -f ${ibus_e_name} ${DESTDIR}${PREFIX}/lib/ibus-${engine_name}/
-		cp -f data/${engine_name}-freebsd.xml ${DESTDIR}${ibus_dir}/component/
+		render_component data/${engine_name}-freebsd.xml ${DESTDIR}${ibus_dir}/component/${engine_name}.xml
 		cp -f data/${engine_gui_name} ${DESTDIR}${PREFIX}/share/applications/
 		;;
 	*)	echo "Hiện tại chưa hỗ trợ hệ điều hành này!"

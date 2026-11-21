@@ -1,7 +1,7 @@
 package main
 
 import (
-	"ibus-bamboo/config"
+	"github.com/BambooEngine/ibus-bamboo/config"
 	"testing"
 
 	"github.com/BambooEngine/bamboo-core"

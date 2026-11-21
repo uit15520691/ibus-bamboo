@@ -1,0 +1,23 @@
+FROM ubuntu:26.10
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV CGO_ENABLED=1
+
+RUN --mount=type=cache,target=/var/cache/apt \
+    --mount=type=cache,target=/var/lib/apt \
+    apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ca-certificates \
+    git \
+    golang-go \
+    pkg-config \
+    libibus-1.0-dev \
+    libgtk-3-dev \
+    libx11-dev \
+    libxtst-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY . .
+
+CMD ["sh", "-c", "make test && make build"]

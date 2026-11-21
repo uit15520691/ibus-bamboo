@@ -1,48 +1,49 @@
 package main
 
 import (
-	"errors"
+	"fmt"
 
 	"github.com/godbus/dbus/v5"
 )
 
+const (
+	gnomeFocusBusName = "org.ibus.bamboo.GnomeFocus"
+	gnomeFocusPath    = dbus.ObjectPath("/org/ibus/bamboo/GnomeFocus")
+	gnomeFocusIface   = "org.ibus.bamboo.GnomeFocus"
+)
+
+// gnomeGetFocusWindowClass asks the bundled GNOME Shell extension for the
+// focused window's WM class. GNOME Shell's org.gnome.Shell.Eval method is
+// disabled in normal sessions on current GNOME releases, so the extension is
+// the only supported way to identify the focused application on GNOME.
 func gnomeGetFocusWindowClass() (string, error) {
 	conn, err := dbus.SessionBus()
-	var s string
-	if err != nil {
-		return s, err
-	}
-	defer func() {
-		if err = conn.Hello(); err == nil {
-			conn.Close()
-		}
-	}()
-
-	js_code := "global.get_window_actors().find(window => !Main.overview.visible && window.meta_window.has_focus()).get_meta_window().get_wm_class()"
-	obj := conn.Object("org.gnome.Shell", "/org/gnome/Shell")
-	var ok bool
-	err = obj.Call("org.gnome.Shell.Eval", 0, js_code).Store(&ok, &s)
-	if !ok {
-		if isGnomeOverviewVisible(conn) {
-			return "org.gnome.Overview", nil
-		} else {
-			err = errors.New(s)
-		}
-	}
 	if err != nil {
 		return "", err
 	}
-	return s, nil
+	defer conn.Close()
+
+	obj := conn.Object(gnomeFocusBusName, gnomeFocusPath)
+	var class string
+	if err := obj.Call(gnomeFocusIface+".GetFocusedWindowClass", 0).Store(&class); err != nil {
+		return "", fmt.Errorf(
+			"GNOME focus detection unavailable: cannot call %s (%w); "+
+				"install and enable the bundled bamboo-focus@ibus-bamboo GNOME Shell extension "+
+				"(see gnome-extension/README.md)",
+			gnomeFocusBusName, err)
+	}
+	if class == "" {
+		visible, visibleErr := gnomeIsOverviewVisible(conn)
+		if visibleErr == nil && visible {
+			return "org.gnome.Overview", nil
+		}
+	}
+	return class, nil
 }
 
-func isGnomeOverviewVisible(conn *dbus.Conn) bool {
-	js_code := "Main.overview.visible"
-	obj := conn.Object("org.gnome.Shell", "/org/gnome/Shell")
-	var visible string
-	var ok bool
-	err := obj.Call("org.gnome.Shell.Eval", 0, js_code).Store(&ok, &visible)
-	if !ok || err != nil {
-		return false
-	}
-	return visible == "true"
+func gnomeIsOverviewVisible(conn *dbus.Conn) (bool, error) {
+	obj := conn.Object(gnomeFocusBusName, gnomeFocusPath)
+	var visible bool
+	err := obj.Call(gnomeFocusIface+".IsOverviewVisible", 0).Store(&visible)
+	return visible, err
 }

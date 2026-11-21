@@ -2,11 +2,19 @@ package main
 
 import (
 	"fmt"
+	"sync/atomic"
 
 	wl "github.com/dkolbly/wl"
 )
 
-var wlAppId string
+var wlAppId atomic.Value // string
+
+func getWlAppId() string {
+	if v, ok := wlAppId.Load().(string); ok {
+		return v
+	}
+	return ""
+}
 
 func wlGetFocusWindowClass() error {
 	display, err := wl.Connect("")
@@ -20,13 +28,12 @@ func wlGetFocusWindowClass() error {
 	}
 	for {
 		select {
-		case wlAppId = <-appIdChan:
-			fmt.Println("wlAppId = ", wlAppId)
+		case appId := <-appIdChan:
+			wlAppId.Store(appId)
+			debugf("wlAppId = %s", appId)
 		case display.Context().Dispatch() <- struct{}{}:
 		}
 	}
-	display.Context().Close()
-	return nil
 }
 
 func registerGlobals(display *wl.Display, appIdChan chan string) error {
@@ -70,6 +77,8 @@ loop:
 func registerInterface(registry *wl.Registry, ev wl.RegistryGlobalEvent, ctx *wl.Context, adHandler *appIdHandler) error {
 	switch ev.Interface {
 	case "zwlr_foreign_toplevel_manager_v1":
+		// GNOME/Mutter does not implement this wlroots-only protocol; on GNOME
+		// the bundled Shell extension is used instead (see gnome_introspector.go).
 		manager := NewZwlrForeignToplevelManagerV1(ctx)
 		manager.AddToplevelHandler(toplevelHandlers{adHandler})
 		err := registry.Bind(ev.Name, ev.Interface, ev.Version, manager)

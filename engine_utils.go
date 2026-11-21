@@ -21,12 +21,13 @@ package main
 
 import (
 	"fmt"
-	"ibus-bamboo/config"
-	"ibus-bamboo/ui"
-	"io/ioutil"
+	"github.com/BambooEngine/ibus-bamboo/config"
+	"github.com/BambooEngine/ibus-bamboo/ui"
+	"log"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unicode"
@@ -37,8 +38,54 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
-var dictionary = map[string]bool{}
-var emojiTrie = NewTrie()
+var (
+	dictionary   = map[string]bool{}
+	dictionaryMu sync.RWMutex
+	emojiTrie    = NewTrie()
+	emojiTrieMu  sync.RWMutex
+)
+
+func lookupDictionary(word string) bool {
+	dictionaryMu.RLock()
+	defer dictionaryMu.RUnlock()
+	return dictionary[word]
+}
+
+func isDictionaryEmpty() bool {
+	dictionaryMu.RLock()
+	defer dictionaryMu.RUnlock()
+	return len(dictionary) == 0
+}
+
+func replaceDictionary(dict map[string]bool) {
+	dictionaryMu.Lock()
+	defer dictionaryMu.Unlock()
+	dictionary = dict
+}
+
+func getEmojiTrie() *TrieNode {
+	emojiTrieMu.RLock()
+	defer emojiTrieMu.RUnlock()
+	return emojiTrie
+}
+
+func replaceEmojiTrie(trie *TrieNode) {
+	emojiTrieMu.Lock()
+	defer emojiTrieMu.Unlock()
+	emojiTrie = trie
+}
+
+var waylandXTestWarning sync.Once
+
+// effectiveBackspaceMode maps XTestFakeKeyEvent to ForwardKeyEvent on Wayland.
+// XTest only reaches XWayland clients, so it cannot correct text in native
+// Wayland applications.
+func effectiveBackspaceMode(onWayland bool, mode int) int {
+	if onWayland && mode == config.XTestFakeKeyEventIM {
+		return config.BackspaceForwardingIM
+	}
+	return mode
+}
 
 func GetIBusEngineCreator() func(*dbus.Conn, string) dbus.ObjectPath {
 	go keyPressCapturing()
@@ -46,7 +93,7 @@ func GetIBusEngineCreator() func(*dbus.Conn, string) dbus.ObjectPath {
 	return func(conn *dbus.Conn, ngName string) dbus.ObjectPath {
 		var ngGroupName = strings.Split(ngName, "::")[0]
 		var engineName = strings.ToLower(ngGroupName)
-		fmt.Printf("Got engine name: %s", engineName)
+		debugf("Got engine name: %s", engineName)
 		var cfg = config.LoadConfig(engineName)
 		var objectPath = dbus.ObjectPath(fmt.Sprintf("/org/freedesktop/IBus/Engine/%s/%d", engineName, time.Now().UnixNano()))
 		var inputMethod = bamboo.ParseInputMethod(cfg.InputMethodDefinitions, cfg.InputMethod)
@@ -88,22 +135,23 @@ func (e *IBusBambooEngine) init() {
 }
 
 func initConfigFiles(engineName string) {
-	if sta, err := os.Stat(config.GetConfigDir(engineName)); err != nil || !sta.IsDir() {
-		err = os.Mkdir(config.GetConfigDir(engineName), 0777)
-		if err != nil {
-			panic(err)
+	configDir := config.GetConfigDir(engineName)
+	if sta, err := os.Stat(configDir); err != nil || !sta.IsDir() {
+		if err := os.MkdirAll(configDir, 0755); err != nil {
+			log.Printf("cannot create config directory %s: %v", configDir, err)
+			return
 		}
 	}
 	macroPath := config.GetMacroPath(engineName)
 	if _, err := os.Stat(macroPath); os.IsNotExist(err) {
 		sampleFile := getEngineSubFile(sampleMactabFile)
-		sample, err := ioutil.ReadFile(sampleFile)
+		sample, err := os.ReadFile(sampleFile)
 		if err != nil {
-			panic(err)
+			log.Printf("cannot read macro template %s: %v", sampleFile, err)
+			return
 		}
-		err = ioutil.WriteFile(macroPath, sample, 0644)
-		if err != nil {
-			panic(err)
+		if err := os.WriteFile(macroPath, sample, 0644); err != nil {
+			log.Printf("cannot write macro file %s: %v", macroPath, err)
 		}
 	}
 }
@@ -143,11 +191,22 @@ func (e *IBusBambooEngine) resetBuffer() {
 }
 
 func (e *IBusBambooEngine) checkWmClass(newId string) {
-	if e.wmClasses != newId {
-		e.wmClasses = newId
-		e.resetBuffer()
-		e.resetFakeBackspace()
+	e.wmMu.Lock()
+	oldID := e.wmClasses
+	if oldID == newId {
+		e.wmMu.Unlock()
+		return
 	}
+	e.wmMu.Unlock()
+	// FocusIn happens after the new field is focused: never commit old text into it.
+	if e.getRawKeyLen() > 0 || oldID != "" {
+		log.Printf("Focus identity changed (%q -> %q); discarding pending composition", oldID, newId)
+		e.resetPreedit()
+	}
+	e.resetFakeBackspace()
+	e.wmMu.Lock()
+	e.wmClasses = newId
+	e.wmMu.Unlock()
 }
 
 func (e *IBusBambooEngine) isShortcutKeyPressed(keyVal, state uint32, shortcut uint) bool {
@@ -543,21 +602,28 @@ func (e *IBusBambooEngine) inBrowserList() bool {
 }
 
 func (e *IBusBambooEngine) getWmClass() string {
+	e.wmMu.RLock()
+	defer e.wmMu.RUnlock()
 	return e.wmClasses
 }
 
 func (e *IBusBambooEngine) getLatestWmClass() string {
 	var wmClass string
 	if isGnome {
-		wmClass, _ = gnomeGetFocusWindowClass()
+		var err error
+		wmClass, err = gnomeGetFocusWindowClass()
+		if err != nil {
+			log.Printf("GNOME focus lookup failed: %v", err)
+		}
 	} else if isWayland {
-		wmClass = wlAppId
-	}
-	if wmClass == "" {
+		wmClass = getWlAppId()
+		if wmClass == "" {
+			debugf("Wayland focus lookup returned no application ID; refusing X11 fallback to avoid stale identity")
+		}
+	} else {
 		wmClass = x11GetFocusWindowClass()
 	}
-	wmClass = strings.Replace(wmClass, "\"", "", -1)
-	return wmClass
+	return normalizeApplicationIdentity(wmClass)
 }
 
 func (e *IBusBambooEngine) checkInputMode(im int) bool {

@@ -1,0 +1,33 @@
+#!/bin/sh
+# Print the version used for this build.
+#
+# - BAMBOO_VERSION overrides everything (release/CI/distro builds).
+# - Inside a git checkout, append the short commit and a dirty marker so local
+#   builds can be distinguished from packaged builds.
+# - Fall back to the base version in VERSION.
+
+set -e
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+base=$(cat "$root/VERSION")
+
+if [ -n "${BAMBOO_VERSION:-}" ]; then
+	echo "$BAMBOO_VERSION"
+	exit 0
+fi
+
+if git -C "$root" rev-parse --git-dir >/dev/null 2>&1; then
+	if tag=$(git -C "$root" describe --tags --exact-match 2>/dev/null); then
+		echo "${tag#v}"
+		exit 0
+	fi
+	sha=$(git -C "$root" rev-parse --short HEAD)
+	dirty=""
+	if [ -n "$(git -C "$root" status --porcelain --ignore-submodules 2>/dev/null)" ]; then
+		dirty=".dirty"
+	fi
+	echo "${base}+${sha}${dirty}"
+	exit 0
+fi
+
+echo "$base"

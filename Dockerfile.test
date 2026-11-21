@@ -1,0 +1,8 @@
+FROM ibus-bamboo-base:latest
+
+WORKDIR /src
+COPY . .
+
+ENV CGO_ENABLED=1
+
+CMD ["sh", "-c", "make test && make build"]

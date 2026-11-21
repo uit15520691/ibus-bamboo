@@ -20,19 +20,18 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os/exec"
-	"reflect"
 	"strconv"
 	"sync"
+	"sync/atomic"
 
 	"github.com/BambooEngine/bamboo-core"
 	ibus "github.com/BambooEngine/goibus"
 	"github.com/godbus/dbus/v5"
 
-	"ibus-bamboo/config"
-	"ibus-bamboo/ui"
+	"github.com/BambooEngine/ibus-bamboo/config"
+	"github.com/BambooEngine/ibus-bamboo/ui"
 )
 
 type IBusBambooEngine struct {
@@ -44,18 +43,22 @@ type IBusBambooEngine struct {
 	propList               *ibus.PropList
 	englishMode            bool
 	macroTable             *MacroTable
+	wmMu                   sync.RWMutex
 	wmClasses              string
 	isInputModeLTOpened    bool
 	isEmojiLTOpened        bool
 	isInHexadecimal        bool
 	emojiLookupTable       *ibus.LookupTable
 	inputModeLookupTable   *ibus.LookupTable
-	capabilities           uint32
+	capabilities           atomic.Uint32
 	keyPressDelay          int
 	nFakeBackSpace         int32
 	isFirstTimeSendingBS   bool
 	emoji                  *EmojiEngine
-	isSurroundingTextReady bool
+	isSurroundingTextReady atomic.Bool
+	contentPurpose         atomic.Uint32
+	contentHints           atomic.Uint32
+	bypassInputMethod      atomic.Bool
 	lastKeyWithShift       bool
 	lastCommitText         int64
 	// restore key strokes by pressing Shift + Space
@@ -97,8 +100,10 @@ func (e *IBusBambooEngine) ProcessKeyEvent(keyVal uint32, keyCode uint32, state 
 		// fmt.Println("Ignore key-up event")
 		return false, nil
 	}
-	fmt.Printf("\n")
-	log.Printf(">>>>ProcessKeyEvent >  %d | state %d keyVal 0x%04x | %c <<<<\n", len(keyPressChan), state, keyVal, rune(keyVal))
+	if e.bypassInputMethod.Load() {
+		return false, nil
+	}
+	debugf("ProcessKeyEvent: pending=%d state=%d keyVal=0x%04x (%c)", len(keyPressChan), state, keyVal, rune(keyVal))
 	if ret, retValue := e.processShortcutKey(keyVal, keyCode, state); ret {
 		return retValue, nil
 	}
@@ -109,32 +114,43 @@ func (e *IBusBambooEngine) ProcessKeyEvent(keyVal uint32, keyCode uint32, state 
 }
 
 func (e *IBusBambooEngine) FocusIn() *dbus.Error {
-	log.Print("FocusIn.")
-	var latestWm = e.getLatestWmClass()
+	debugf("FocusIn.")
+	latestWm := e.getLatestWmClass()
+	if latestWm == "" {
+		log.Print("FocusIn: focused application identity unavailable; per-application rules are temporarily disabled")
+	}
 	e.checkWmClass(latestWm)
 	e.RegisterProperties(e.propList)
-	e.RequireSurroundingText()
-	if e.isShortcutKeyEnable(KSEmojiDialog) && emojiTrie != nil && len(emojiTrie.Children) == 0 {
-		var err error
-		emojiTrie, err = loadEmojiOne(DictEmojiOne)
+	e.requireSurroundingText()
+	if e.isShortcutKeyEnable(KSEmojiDialog) && len(getEmojiTrie().Children) == 0 {
+		trie, err := loadEmojiOne(DictEmojiOne)
 		if err != nil {
-			panic(fmt.Sprintf("failed to load emojiTrie from %s: %s", DictEmojiOne, err))
+			log.Printf("failed to load emoji data from %s: %v; emoji lookup disabled", DictEmojiOne, err)
+		} else {
+			replaceEmojiTrie(trie)
 		}
 	}
-	if e.config.IBflags&config.IBspellCheckWithDicts != 0 && len(dictionary) == 0 {
-		dictionary, _ = loadDictionary(DictVietnameseCm)
+	if e.config.IBflags&config.IBspellCheckWithDicts != 0 && isDictionaryEmpty() {
+		dict, err := loadDictionary(DictVietnameseCm)
+		if err != nil {
+			log.Printf("failed to load dictionary %s: %v", DictVietnameseCm, err)
+		} else {
+			replaceDictionary(dict)
+		}
 	}
-	fmt.Printf("WM_CLASS=(%s)\n", e.getWmClass())
+	debugf("WM_CLASS=(%s)", e.getWmClass())
 	return nil
 }
 
 func (e *IBusBambooEngine) FocusOut() *dbus.Error {
-	log.Print("FocusOut.")
+	debugf("FocusOut: discard unfinished preedit to prevent text leaking into another field")
+	e.resetPreedit()
+	e.resetFakeBackspace()
 	return nil
 }
 
 func (e *IBusBambooEngine) Reset() *dbus.Error {
-	fmt.Print("Reset.\n")
+	debugf("Reset.")
 	if e.checkInputMode(config.PreeditIM) {
 		e.preeditor.Reset()
 	}
@@ -142,48 +158,76 @@ func (e *IBusBambooEngine) Reset() *dbus.Error {
 }
 
 func (e *IBusBambooEngine) Enable() *dbus.Error {
-	fmt.Print("Enable.")
-	e.RequireSurroundingText()
+	debugf("Enable.")
+	e.requireSurroundingText()
 	return nil
 }
 
 func (e *IBusBambooEngine) Disable() *dbus.Error {
-	fmt.Print("Disable.")
+	debugf("Disable.")
 	return nil
 }
 
 // @method(in_signature="vuu")
 func (e *IBusBambooEngine) SetSurroundingText(text dbus.Variant, cursorPos uint32, anchorPos uint32) *dbus.Error {
-	if !e.isSurroundingTextReady {
-		//fmt.Println("Surrounding Text is not ready yet.")
+	if !e.isSurroundingTextReady.Load() {
 		return nil
 	}
 	e.Lock()
 	defer func() {
 		e.Unlock()
-		e.isSurroundingTextReady = false
+		e.isSurroundingTextReady.Store(false)
 		if err := recover(); err != nil {
-			fmt.Println(err)
+			log.Printf("SetSurroundingText: malformed payload: %v", err)
 		}
 	}()
-	if e.inBackspaceWhiteList() {
-		var str = reflect.ValueOf(reflect.ValueOf(text.Value()).Index(2).Interface()).String()
-		var s = []rune(str)
-		if len(s) < int(cursorPos) {
-			return nil
+	if !e.inBackspaceWhiteList() {
+		return nil
+	}
+	str, ok := surroundingTextFromVariant(text)
+	if !ok {
+		debugf("SetSurroundingText: unsupported text payload")
+		return nil
+	}
+	s := []rune(str)
+	if int(cursorPos) > len(s) {
+		return nil
+	}
+	cs := s[:cursorPos]
+	debugf("Surrounding Text: %s", string(cs))
+	e.preeditor.Reset()
+	for i := len(cs) - 1; i >= 0; i-- {
+		// workaround for spell checking
+		if bamboo.IsPunctuationMark(cs[i]) && e.preeditor.CanProcessKey(cs[i]) {
+			cs[i] = ' '
 		}
-		var cs = s[:cursorPos]
-		fmt.Println("Surrounding Text: ", string(cs))
-		e.preeditor.Reset()
-		for i := len(cs) - 1; i >= 0; i-- {
-			// workaround for spell checking
-			if bamboo.IsPunctuationMark(cs[i]) && e.preeditor.CanProcessKey(cs[i]) {
-				cs[i] = ' '
-			}
-			e.preeditor.ProcessKey(cs[i], bamboo.EnglishMode|bamboo.InReverseOrder)
-		}
+		e.preeditor.ProcessKey(cs[i], bamboo.EnglishMode|bamboo.InReverseOrder)
 	}
 	return nil
+}
+
+// ibusSurroundingText mirrors the fields of goibus.Text. IBus serializes the
+// value as an IBusText struct; decoding into a typed struct avoids depending on
+// reflect and on goibus's internal field order.
+type ibusSurroundingText struct {
+	Name        string
+	Attachments map[string]dbus.Variant
+	Text        string
+	AttrList    dbus.Variant
+}
+
+func surroundingTextFromVariant(v dbus.Variant) (string, bool) {
+	var payload ibusSurroundingText
+	if err := v.Store(&payload); err == nil {
+		return payload.Text, true
+	}
+	// Defensive fallback for tuple-shaped payloads from older/custom clients.
+	if values, ok := v.Value().([]interface{}); ok && len(values) > 2 {
+		if s, ok := values[2].(string); ok {
+			return s, true
+		}
+	}
+	return "", false
 }
 
 func (e *IBusBambooEngine) PageUp() *dbus.Error {
@@ -239,8 +283,22 @@ func (e *IBusBambooEngine) CandidateClicked(index uint32, button uint32, state u
 }
 
 func (e *IBusBambooEngine) SetCapabilities(cap uint32) *dbus.Error {
-	e.capabilities = cap
+	e.capabilities.Store(cap)
 	return nil
+}
+
+// supportsSurroundingText reports whether the client can provide surrounding
+// text. A zero capability mask means the client has not reported its
+// capabilities yet; keep the historical request behavior in that case.
+func (e *IBusBambooEngine) supportsSurroundingText() bool {
+	cap := e.capabilities.Load()
+	return cap == 0 || cap&IBusCapSurroundingText != 0
+}
+
+func (e *IBusBambooEngine) requireSurroundingText() {
+	if e.supportsSurroundingText() {
+		e.RequireSurroundingText()
+	}
 }
 
 func (e *IBusBambooEngine) SetCursorLocation(x int32, y int32, w int32, h int32) *dbus.Error {
@@ -248,6 +306,20 @@ func (e *IBusBambooEngine) SetCursorLocation(x int32, y int32, w int32, h int32)
 }
 
 func (e *IBusBambooEngine) SetContentType(purpose uint32, hints uint32) *dbus.Error {
+	nextSensitive := shouldBypassInputMethod(purpose, hints)
+	if nextSensitive != e.bypassInputMethod.Load() {
+		if nextSensitive {
+			log.Printf("SetContentType: entering a context that bypasses Bamboo (purpose=%d hints=0x%x); disabling Bamboo processing", purpose, hints)
+			e.resetPreedit()
+			e.resetFakeBackspace()
+			e.HideLookupTable()
+		} else {
+			log.Printf("SetContentType: leaving a context that bypasses Bamboo (purpose=%d hints=0x%x)", purpose, hints)
+		}
+	}
+	e.contentPurpose.Store(purpose)
+	e.contentHints.Store(hints)
+	e.bypassInputMethod.Store(nextSensitive)
 	return nil
 }
 
@@ -323,7 +395,12 @@ func (e *IBusBambooEngine) PropertyActivate(propName string, propState uint32) *
 		if propState == ibus.PROP_STATE_CHECKED {
 			e.config.IBflags |= config.IBspellCheckWithDicts
 			turnSpellChecking(true)
-			dictionary, _ = loadDictionary(DictVietnameseCm)
+			dict, err := loadDictionary(DictVietnameseCm)
+			if err != nil {
+				log.Printf("failed to load dictionary %s: %v", DictVietnameseCm, err)
+			} else {
+				replaceDictionary(dict)
+			}
 		} else {
 			e.config.IBflags &= ^config.IBspellCheckWithDicts
 		}
