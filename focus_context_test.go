@@ -3,12 +3,16 @@ package main
 import (
 	"testing"
 
-	"ibus-bamboo/config"
 	"github.com/BambooEngine/bamboo-core"
+	"github.com/BambooEngine/ibus-bamboo/config"
 )
 
 func TestShouldBypassInputMethod(t *testing.T) {
-	tests := []struct { name string; purpose, hints uint32; want bool }{
+	tests := []struct {
+		name           string
+		purpose, hints uint32
+		want           bool
+	}{
 		{name: "normal", want: false},
 		{name: "digits", purpose: ibusInputPurposeDigits, want: true},
 		{name: "number", purpose: ibusInputPurposeNumber, want: true},

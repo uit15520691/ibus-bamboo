@@ -11,6 +11,12 @@ JavaScript evaluation.
 From the repository root:
 
 ```sh
+make install-extension
+```
+
+Or manually:
+
+```sh
 install_dir="$HOME/.local/share/gnome-shell/extensions/bamboo-focus@ibus-bamboo"
 mkdir -p "$install_dir"
 cp gnome-extension/extension.js gnome-extension/metadata.json "$install_dir/"
@@ -30,9 +36,9 @@ Restart Bamboo/IBus after enabling the extension:
 ibus restart
 ```
 
-The Go client tries the extension API first and falls back to the legacy Shell
-Eval method for older/custom sessions that still allow it. On other desktops,
-the existing Wayland/X11 introspection paths remain unchanged.
+The Go client uses this extension as the only supported focus API on GNOME.
+`org.gnome.Shell.Eval` is disabled in normal sessions and is no longer used. On
+other desktops, the existing Wayland/X11 introspection paths remain unchanged.
 
 ## D-Bus API
 

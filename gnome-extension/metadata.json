@@ -2,6 +2,9 @@
   "uuid": "bamboo-focus@ibus-bamboo",
   "name": "Bamboo Focus Detection",
   "description": "Provides focused window identity (WM_CLASS or GTK application ID) without enabling GNOME Shell Eval.",
-  "shell-version": ["51"],
-  "version": 1
+  "shell-version": ["51", "52"],
+  "version": 2,
+  "version-name": "0.8.5",
+  "session-modes": ["user", "unlock-dialog"],
+  "url": "https://github.com/BambooEngine/ibus-bamboo"
 }

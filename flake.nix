@@ -7,7 +7,7 @@
 
   outputs = { self, nixpkgs }:
     let
-      version = "v0.8.5";
+      version = builtins.replaceStrings [ "\n" " " "\t" ] [ "" "" "" ] (builtins.readFile ./VERSION);
 
       supportedSystems = [ "x86_64-linux" "aarch64-linux" ];
 
@@ -39,7 +39,6 @@
 
             preConfigure = ''
               export GOCACHE="$TMPDIR/go-cache"
-              sed -i "s,/usr,$out," data/bamboo.xml
             '';
 
             makeFlags = [

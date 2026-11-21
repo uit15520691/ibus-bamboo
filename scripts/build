@@ -1,6 +1,7 @@
 # Ibus bamboo
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ibus_e_name="ibus-engine-bamboo"
-version="0.8.5"
+version=$(sh "$script_dir/version")
 
 # Go flags
 LDFLAGS="-w -s -X main.Version=${version}"

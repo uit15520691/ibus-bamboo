@@ -162,6 +162,12 @@ Trước khi báo lỗi vui lòng đọc [những vấn đề thường gặp](h
 
 Nếu trang phía trên không giải quyết vấn đề của bạn, vui lòng [báo lỗi tại đây](https://github.com/BambooEngine/ibus-bamboo/issues)
 
+### Gỡ lỗi
+
+Theo mặc định engine không ghi log từng phím để tránh làm chậm và làm đầy journal.
+Đặt biến môi trường `BAMBOO_DEBUG=1` (ví dụ trong `~/.config/environment.d/`)
+rồi khởi động lại IBus để bật log chẩn đoán chi tiết.
+
 ## Đóng góp cho dự án
 
 Nếu bạn muốn hiểu thêm về dự án có thể xem thêm ở file này. [HACKING.md](./docs/HACKING.adoc)
@@ -192,6 +198,13 @@ sudo install -D -m 644 data/ibus-setup-Bamboo.desktop \
 
 
 ## Shell extension for ibus-bamboo
+```shell
+make install-extension
+gnome-extensions info bamboo-focus@ibus-bamboo
+```
+
+Or install it manually:
+
 ```shell
 mkdir -p ~/.local/share/gnome-shell/extensions/bamboo-focus@ibus-bamboo
 

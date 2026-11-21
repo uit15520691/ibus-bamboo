@@ -2,6 +2,7 @@ package ui
 
 /*
 #cgo pkg-config: gtk+-3.0
+#include <stdlib.h>
 #include <gtk/gtk.h>
 
 extern int openGUI(guint flags, int mode, guint32 *s, int size, char *mtext, char *cfgtext);
@@ -9,8 +10,8 @@ extern int openGUI(guint flags, int mode, guint32 *s, int size, char *mtext, cha
 import "C"
 import (
 	"encoding/json"
-	"ibus-bamboo/config"
-	"io/ioutil"
+	"github.com/BambooEngine/ibus-bamboo/config"
+	"log"
 	"os"
 	"unsafe"
 )
@@ -33,9 +34,9 @@ func saveConfigText(text *C.char) {
 		cfgText = C.GoString(text)
 		cfgFn   = config.GetConfigPath(engineName)
 	)
-	err := ioutil.WriteFile(cfgFn, []byte(cfgText), 0644)
+	err := os.WriteFile(cfgFn, []byte(cfgText), 0644)
 	if err != nil {
-		panic(err)
+		log.Printf("cannot save config %s: %v", cfgFn, err)
 	}
 }
 
@@ -45,9 +46,9 @@ func saveMacroText(text *C.char) {
 		macroText = C.GoString(text)
 		macroFP   = config.GetMacroPath(engineName)
 	)
-	err := ioutil.WriteFile(macroFP, []byte(macroText), 0644)
+	err := os.WriteFile(macroFP, []byte(macroText), 0644)
 	if err != nil {
-		panic(err)
+		log.Printf("cannot save macro file %s: %v", macroFP, err)
 	}
 }
 
@@ -88,14 +89,20 @@ func OpenGUI(engName string) {
 		size          = len(shortcuts)
 		macroFilePath = config.GetMacroPath(engineName)
 	)
-	mText, err := ioutil.ReadFile(macroFilePath)
+	mText, err := os.ReadFile(macroFilePath)
 	if err != nil {
-		panic(err)
+		log.Printf("cannot read macro file %s: %v", macroFilePath, err)
+		return
 	}
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		panic(err)
+		log.Printf("cannot encode config: %v", err)
+		return
 	}
 	os.Setenv("GTK_IM_MODULE", "gtk-im-context-simple")
-	C.openGUI(C.guint(cfg.IBflags), C.int(cfg.DefaultInputMode), s, C.int(size), C.CString(string(mText)), C.CString(string(data)))
+	mTextC := C.CString(string(mText))
+	defer C.free(unsafe.Pointer(mTextC))
+	dataC := C.CString(string(data))
+	defer C.free(unsafe.Pointer(dataC))
+	C.openGUI(C.guint(cfg.IBflags), C.int(cfg.DefaultInputMode), s, C.int(size), mTextC, dataC)
 }

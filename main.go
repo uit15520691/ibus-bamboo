@@ -45,10 +45,11 @@ func hasGnome(env string) bool {
 }
 
 func main() {
-	if os.Getenv("WAYLAND_DISPLAY") != "" {
+	if os.Getenv("WAYLAND_DISPLAY") != "" || strings.EqualFold(os.Getenv("XDG_SESSION_TYPE"), "wayland") {
 		isWayland = true
 	}
-	if hasGnome("XDG_CURRENT_DESKTOP") || hasGnome("DESKTOP_SESSION") || hasGnome("GDMSESSION") {
+	if hasGnome("XDG_CURRENT_DESKTOP") || hasGnome("DESKTOP_SESSION") ||
+		hasGnome("GDMSESSION") || os.Getenv("GNOME_DESKTOP_SESSION_ID") != "" {
 		isGnome = true
 	}
 	flag.Parse()

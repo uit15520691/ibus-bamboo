@@ -20,7 +20,7 @@
 package main
 
 import (
-	"ibus-bamboo/config"
+	"github.com/BambooEngine/ibus-bamboo/config"
 
 	"github.com/BambooEngine/bamboo-core"
 	ibus "github.com/BambooEngine/goibus"

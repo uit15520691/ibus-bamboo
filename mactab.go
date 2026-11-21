@@ -21,7 +21,7 @@ package main
 
 import (
 	"bufio"
-	"ibus-bamboo/config"
+	"github.com/BambooEngine/ibus-bamboo/config"
 	"os"
 	"strings"
 	"sync"

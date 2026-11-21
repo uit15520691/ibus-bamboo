@@ -18,17 +18,18 @@
 
 CC=cc
 SHELL=sh
+PREFIX ?= /usr
 
 engine_name=bamboo
 engine_gui_name=ibus-setup-Bamboo.desktop
 ibus_e_name=ibus-engine-$(engine_name)
 pkg_name=ibus-$(engine_name)
-version=0.8.5
+version=$(shell sh scripts/version)
 
 engine_dir=$(PREFIX)/share/$(pkg_name)
 ibus_dir=$(PREFIX)/share/ibus
 
-GOLDFLAGS=-ldflags "-w -s -X main.Version=$(version)
+GOLDFLAGS=-ldflags "-w -s -X main.Version=$(version)"
 
 rpm_src_dir=~/rpmbuild/SOURCES
 tar_file=$(pkg_name)-$(version).tar.gz
@@ -58,11 +59,53 @@ docker-test:
 
 docker-build:
 	docker run --rm \
+		--user "$$(id -u):$$(id -g)" \
+		-e HOME=/tmp \
+		-e GOCACHE=/tmp/go-cache \
+		-e GOMODCACHE=/tmp/go-mod-cache \
 		-v "$(CURDIR):/src" \
 		-w /src \
 		--entrypoint sh \
 		ibus-bamboo-test:latest \
 		-c 'git config --global --add safe.directory /src && make build'
+
+.PHONY: docker-test-ubuntu docker-build-ubuntu
+
+docker-test-ubuntu:
+	docker build -f Dockerfile.ubuntu -t ibus-bamboo-ubuntu:latest .
+	docker run --rm \
+		--user "$$(id -u):$$(id -g)" \
+		-e HOME=/tmp \
+		-e GOCACHE=/tmp/go-cache \
+		-e GOMODCACHE=/tmp/go-mod-cache \
+		-v "$(CURDIR):/src" \
+		ibus-bamboo-ubuntu:latest
+
+docker-build-ubuntu:
+	docker build -f Dockerfile.ubuntu -t ibus-bamboo-ubuntu:latest .
+	docker run --rm \
+		--user "$$(id -u):$$(id -g)" \
+		-e HOME=/tmp \
+		-e GOCACHE=/tmp/go-cache \
+		-e GOMODCACHE=/tmp/go-mod-cache \
+		-v "$(CURDIR):/src" \
+		-w /src \
+		--entrypoint sh \
+		ibus-bamboo-ubuntu:latest \
+		-c 'git config --global --add safe.directory /src && make build'
+
+.PHONY: install-extension pack-extension
+
+install-extension:
+	install_dir="$$HOME/.local/share/gnome-shell/extensions/bamboo-focus@ibus-bamboo"; \
+	mkdir -p "$$install_dir"; \
+	cp -f gnome-extension/extension.js gnome-extension/metadata.json "$$install_dir/"; \
+	echo "Installed to $$install_dir"; \
+	echo "Enable with: gnome-extensions enable bamboo-focus@ibus-bamboo"
+
+pack-extension:
+	mkdir -p build
+	gnome-extensions pack gnome-extension -o build --force
 
 clean:
 	rm -f ibus-engine-bamboo
